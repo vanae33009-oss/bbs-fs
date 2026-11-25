@@ -210,6 +210,8 @@ public class FormRenderLast
         private final boolean modelRenderer;
         private final long modelRendererTick;
         private final Camera camera = new Camera();
+        /** Which entity the shader pack was told this form is; the replay runs outside that scope. */
+        private final net.minecraft.entity.Entity shaderEntity = mchorse.bbs_mod.graphics.OptiFineShaders.currentActor();
 
         private Postponed(Form form, FormRenderingContext context)
         {
@@ -256,7 +258,10 @@ public class FormRenderLast
                 context.world.peek().getNormalMatrix().set(this.worldNormal);
             }
 
-            FormUtilsClient.render(this.form, context);
+            try (mchorse.bbs_mod.graphics.OptiFineShaders.ActorScope label = mchorse.bbs_mod.graphics.OptiFineShaders.actor(this.shaderEntity))
+            {
+                FormUtilsClient.render(this.form, context);
+            }
         }
     }
 }

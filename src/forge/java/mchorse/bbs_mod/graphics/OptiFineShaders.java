@@ -86,6 +86,61 @@ public final class OptiFineShaders
         }
     }
 
+    /* What OptiFine's RenderGlobal does before every entity it draws (Shaders.nextEntity ->
+     * setEntityId) and what Blockbuster repeats for its render-last actors. BBS draws forms
+     * itself, from RenderWorldLastEvent, so nothing ever updated the entityId uniform and the
+     * pack kept the id of whichever vanilla entity or tile happened to be drawn last. */
+    private static final Method ENTITY_ID = discoverEntityId();
+    private static net.minecraft.entity.Entity shaderEntity;
+    private static boolean entityIdBroken;
+
+    private static Method discoverEntityId()
+    {
+        if (API == null) return null;
+        try
+        {
+            Class<?> shaders = Class.forName("net.optifine.shaders.Shaders");
+            /* setEntityId only writes the uniform; nextEntity also re-selects the program,
+             * which EntityPass has already done. Prefer the narrower one. */
+            for (String name : new String[]{"setEntityId", "nextEntity"})
+            {
+                for (Method method : shaders.getMethods())
+                {
+                    Class<?>[] types = method.getParameterTypes();
+                    if (method.getName().equals(name) && types.length == 1
+                        && java.lang.reflect.Modifier.isStatic(method.getModifiers())
+                        && types[0].isAssignableFrom(net.minecraft.entity.Entity.class)) return method;
+                }
+            }
+        }
+        catch (ReflectiveOperationException | LinkageError error)
+        {
+            BBSMod.LOGGER.warn("OptiFine entity id hook is unavailable", error);
+        }
+        return null;
+    }
+
+    /** Draws made inside this scope are labelled with {@code entity} for the shader pack. */
+    public static ActorScope actor(net.minecraft.entity.Entity entity) { return new ActorScope(entity); }
+    /** The entity the draws happening right now are labelled with; null outside an {@link #actor} scope. */
+    public static net.minecraft.entity.Entity currentActor() { return shaderEntity; }
+    public static final class ActorScope implements AutoCloseable
+    {
+        private final net.minecraft.entity.Entity previous = shaderEntity;
+        private ActorScope(net.minecraft.entity.Entity entity) { shaderEntity = entity; }
+        @Override public void close() { shaderEntity = previous; }
+    }
+    private static void applyEntityId()
+    {
+        if (ENTITY_ID == null || entityIdBroken || shaderEntity == null) return;
+        try { ENTITY_ID.invoke(null, shaderEntity); }
+        catch (ReflectiveOperationException | RuntimeException error)
+        {
+            entityIdBroken = true;
+            BBSMod.LOGGER.warn("OptiFine entity id hook failed; actors keep the pack's last entity id", error);
+        }
+    }
+
     public static EntityPass entities() { return new EntityPass(API.entities); }
     /** Vanilla particles use gbuffers_textured_lit; the shadow program remains
      * owned by OptiFine when a shader pack elects to include these draws. */
@@ -147,6 +202,8 @@ public final class OptiFineShaders
             if (previous == get(API.hand) || previous == get(API.handWater)) selected = previous;
             invoke(API.use, selected);
             GL20.glUseProgram((Integer) get(API.activeId));
+            /* After the program is bound: the uniform belongs to whichever program is active. */
+            if (selected == get(API.entities)) applyEntityId();
         }
         @Override public void close()
         {

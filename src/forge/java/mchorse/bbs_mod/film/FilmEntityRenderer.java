@@ -17,6 +17,7 @@ import mchorse.bbs_mod.forms.renderers.utils.FormFrameCache;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
 import mchorse.bbs_mod.graphics.Draw;
+import mchorse.bbs_mod.graphics.OptiFineShaders;
 import mchorse.bbs_mod.ui.framework.UIBaseMenu;
 import mchorse.bbs_mod.ui.framework.elements.input.drag.TransformSpace;
 import mchorse.bbs_mod.ui.framework.elements.utils.StencilMap;
@@ -161,7 +162,13 @@ public class FilmEntityRenderer
          * itself - and zero, hence nothing, for everyone still alive. */
         DeathPose.apply(stack, entity.getDeathTime(), transition);
 
-        FormUtilsClient.render(form, formContext);
+        /* Under a shader pack the actor is drawn from RenderWorldLastEvent, past the point where
+         * OptiFine labels each entity for the pack (Shaders.nextEntity). Blockbuster calls that
+         * itself for its actors; here the label goes on for every draw the form makes. */
+        try (OptiFineShaders.ActorScope label = OptiFineShaders.actor(shaderEntity(entity)))
+        {
+            FormUtilsClient.render(form, formContext);
+        }
 
         /* A second, post-render span: the gizmo, the axes preview and the anchor gizmo are adjacent and all
          * read the pose the form just rendered with (states applied), so they share one evaluation — the
@@ -254,6 +261,32 @@ public class FilmEntityRenderer
         }
 
         GlStateManager.enableDepth();
+    }
+
+    private static mchorse.bbs_mod.entity.ActorEntity shaderStandIn;
+    private static net.minecraft.world.World shaderStandInWorld;
+
+    /**
+     * The vanilla entity a shader pack should believe it is looking at. A replay backed by a real
+     * body (the actor's shell, a live player) is that body. Any other replay is an unmapped modded
+     * entity as far as the pack is concerned - exactly what Blockbuster's own actor is - so a
+     * never-spawned ActorEntity stands in; it is only read for its class, never added to the world.
+     */
+    private static net.minecraft.entity.Entity shaderEntity(IEntity entity)
+    {
+        if (!OptiFineShaders.isLoaded()) return null;
+        if (entity instanceof mchorse.bbs_mod.forms.entities.MCEntity mc && mc.getMcEntity() != null) return mc.getMcEntity();
+
+        net.minecraft.world.World world = net.minecraft.client.Minecraft.getMinecraft().world;
+
+        if (world == null) return null;
+        if (shaderStandIn == null || shaderStandInWorld != world)
+        {
+            shaderStandIn = new mchorse.bbs_mod.entity.ActorEntity(world);
+            shaderStandInWorld = world;
+        }
+
+        return shaderStandIn;
     }
 
     private static void renderSplineGizmo(FilmTarget target, Matrix4f view, StencilMap map, Form form, IEntity entity, float transition, MatrixStack stack)
