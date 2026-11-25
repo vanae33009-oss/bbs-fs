@@ -12,9 +12,28 @@ public final class BBSShaderTransformer implements IClassTransformer
 {
     private static final String HOOK = "mchorse/bbs_mod/utils/iris/ShaderCurves";
 
+    private static final org.apache.logging.log4j.Logger LOGGER = org.apache.logging.log4j.LogManager.getLogger("BBSShaderTransformer");
+
+    /** The hooks are an optional extra (shader curves, sun yaw). An OptiFine build whose Shaders class
+     * differs from the one they were written against must cost the player those hooks, not the game:
+     * a throw here surfaces as ClassNotFoundException for Shaders and kills the launch. */
     @Override public byte[] transform(String name, String transformedName, byte[] bytes)
     {
         if (bytes == null || !"net.optifine.shaders.Shaders".equals(transformedName)) return bytes;
+        try
+        {
+            return patch(bytes);
+        }
+        catch (Throwable error)
+        {
+            LOGGER.error("BBS shader hooks disabled: this OptiFine build's Shaders class does not match what they expect. "
+                + "The game continues without BBS shader curves and sun yaw.", error);
+            return bytes;
+        }
+    }
+
+    private static byte[] patch(byte[] bytes)
+    {
         ClassNode node = new ClassNode();
         new ClassReader(bytes).accept(node, 0);
         int sources = 0, programs = 0, reloads = 0, shadowRotations=0, shadowVectors=0;
