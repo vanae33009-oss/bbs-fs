@@ -14,7 +14,20 @@ jobs:
           distribution: temurin
           java-version: '17'
       - run: chmod +x gradlew
-      - run: ./gradlew clean build --no-daemon
+      - name: Build with retry
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            rm -rf ~/.gradle/caches/retro_futura_gradle
+            if ./gradlew clean build --no-daemon; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Build failed; retrying..."
+              sleep 15
+            fi
+          done
+          exit 1
       - uses: actions/upload-artifact@v4
         with:
           name: bbs-fs-forge-1.12.2
