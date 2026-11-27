@@ -235,7 +235,7 @@ public class ClientProxy extends CommonProxy {
         net.minecraft.client.renderer.GlStateManager.loadIdentity();
         mchorse.bbs_mod.client.BBSRendering.renderingWorld=true;
         try {
-            mchorse.bbs_mod.BBSModClient.getFilms().render(context);
+            if (!mchorse.bbs_mod.client.BBSRendering.isEntityStageDrawn()) mchorse.bbs_mod.BBSModClient.getFilms().render(context);
             if (Minecraft.getMinecraft().currentScreen instanceof mchorse.bbs_mod.ui.framework.UIScreen)
                 ((mchorse.bbs_mod.ui.framework.UIScreen) Minecraft.getMinecraft().currentScreen).renderInWorld(context);
         }
@@ -244,6 +244,7 @@ public class ClientProxy extends CommonProxy {
                 mchorse.bbs_mod.client.BBSRendering.finishWorldForms();
             }
             finally {
+                mchorse.bbs_mod.client.BBSRendering.resetEntityStage();
                 mchorse.bbs_mod.client.BBSRendering.renderingWorld=wasRenderingWorld;
                 net.minecraft.client.renderer.GlStateManager.matrixMode(org.lwjgl.opengl.GL11.GL_MODELVIEW);
                 net.minecraft.client.renderer.GlStateManager.popMatrix();

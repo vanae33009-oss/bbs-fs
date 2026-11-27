@@ -111,6 +111,7 @@ public final class OptiFineModelRenderer
         private final OptiFineShaders.EntityPass pass;
         private final OptiFineShaders.OverlayPass overlay;
         private final boolean nativeVertices;
+        private OptiFineShaders.OpaqueState opaque;
 
         private Scope(Matrix4f modelView, Matrix4f projection, float r, float g, float b, float a, int light, boolean nativeVertices,int overlayUv)
         {
@@ -137,6 +138,8 @@ public final class OptiFineModelRenderer
             GlStateManager.matrixMode(GL11.GL_PROJECTION); GlStateManager.pushMatrix(); load(projection);
             GlStateManager.matrixMode(GL11.GL_MODELVIEW);
             pass = OptiFineShaders.entities();
+            /* After the program is bound, so nothing the program selection did can survive. */
+            opaque = OptiFineShaders.opaqueState();
             if (nativeVertices)
             {
                 GL30.glBindVertexArray(0);
@@ -168,6 +171,7 @@ public final class OptiFineModelRenderer
              * Minecraft's cache. Native models use this constant, not a color array. */
             GL11.glColor4f(r,g,b,a);
             int program = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+            OptiFineShaders.debugDraw(a);
             attribute(program, "mc_Entity", -1, -1, -1, 0);
             attribute(program, "mc_midTexCoord", 0, 0, 0, 1);
             attribute(program, "at_tangent", 1, 0, 0, 1);
@@ -182,6 +186,7 @@ public final class OptiFineModelRenderer
         @Override public void close()
         {
             if(overlay!=null)overlay.close();
+            if(opaque!=null)opaque.close();
             OptiFinePbr.end();
             if (nativeVertices)
             {

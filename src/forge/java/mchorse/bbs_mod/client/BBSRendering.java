@@ -135,15 +135,29 @@ public final class BBSRendering
     /** Anaglyph renders two world passes; each must collect its own camera-space geometry. */
     public static void onWorldRenderPassBegin()
     {
+        entityStageDrawn=false;
         ownsWorldQueue=!FormTranslucentQueue.isActive();
         if(ownsWorldQueue)FormTranslucentQueue.begin();
         worldRenderLast=FormRenderLast.open();
     }
-    /** OptiFine renders shadow entities directly, without Forge's RenderWorldLastEvent. */
+    /** True from the entity-stage draw of a shader pack's main pass until the frame's RenderWorldLastEvent
+     * is done: the actors are already in the gbuffers, so the late world pass must not draw them again. */
+    private static boolean entityStageDrawn;
+    public static boolean isEntityStageDrawn() { return entityStageDrawn; }
+    public static void resetEntityStage() { entityStageDrawn = false; }
+
+    /** Runs at the end of RenderGlobal.renderEntities. OptiFine renders shadow entities directly, without
+     * Forge's RenderWorldLastEvent. In the main pass of a shader pack the actors are drawn here too: at
+     * RenderWorldLastEvent the deferred lighting has already run, so the pack treats them as a translucent
+     * layer (fogged, washed out, see-through). Inside renderEntities they land in the gbuffers like any
+     * vanilla entity (this is where the old working BBS draws them). */
     public static void onShadowEntities(float transition)
     {
-        if (!mchorse.bbs_mod.graphics.OptiFineShaders.isShadowPass()
-            || net.minecraftforge.client.MinecraftForgeClient.getRenderPass() != 0) return;
+        boolean shadow = mchorse.bbs_mod.graphics.OptiFineShaders.isShadowPass();
+        boolean entityStage = !shadow && mchorse.bbs_mod.graphics.OptiFineShaders.isWorldPass();
+        if ((!shadow && !entityStage) || net.minecraftforge.client.MinecraftForgeClient.getRenderPass() != 0) return;
+        if (entityStage && entityStageDrawn) return;
+        if (entityStage) entityStageDrawn = true;
         mchorse.bbs_mod.graphics.WorldRenderContext context = mchorse.bbs_mod.graphics.WorldRenderContext.capture(transition);
         int mode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
         GlStateManager.matrixMode(GL11.GL_MODELVIEW); GlStateManager.pushMatrix(); GlStateManager.loadIdentity();

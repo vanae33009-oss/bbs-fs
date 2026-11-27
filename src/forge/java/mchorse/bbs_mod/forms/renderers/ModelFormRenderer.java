@@ -505,7 +505,22 @@ public class ModelFormRenderer extends FormRenderer<ModelForm> implements ITicka
             RenderSystem.disableCull();
         }
 
-        if (stencilMap != null || this.form.renderLayer.get() == Form.LAYER_SOLID || this.form.renderLayer.get() == Form.LAYER_CUTOUT)
+        /* Under a shader pack the model is drawn into the deferred gbuffers, where blending mixes every
+         * attachment (colour, normals, lightmap) with what is already there: the actor comes out see-through
+         * and, with culling off, shows its own back faces. Vanilla and Blockbuster draw solid entities with
+         * alpha test and no blending, so an untouched (AUTO, fully opaque) layer does the same here. A form
+         * that really is translucent asks for it with the Translucent layer or a colour fade. */
+        boolean shaderCutout = stencilMap == null && finalColor.a >= 1F && this.form.renderLayer.get() == Form.LAYER_AUTO
+            && mchorse.bbs_mod.graphics.OptiFineShaders.isWorldPass();
+        boolean alphaTestWas = GL11.glIsEnabled(GL11.GL_ALPHA_TEST);
+
+        if (shaderCutout)
+        {
+            net.minecraft.client.renderer.GlStateManager.enableAlpha();
+            net.minecraft.client.renderer.GlStateManager.alphaFunc(GL11.GL_GREATER, 0.1F);
+        }
+
+        if (stencilMap != null || shaderCutout || this.form.renderLayer.get() == Form.LAYER_SOLID || this.form.renderLayer.get() == Form.LAYER_CUTOUT)
             RenderSystem.disableBlend();
         else RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
@@ -559,6 +574,7 @@ public class ModelFormRenderer extends FormRenderer<ModelForm> implements ITicka
         final boolean ignoreMaterials = model.materials.size() <= 1;
         final Link materialFallback = ignoreMaterials ? resolvedDefault : model.getTexture();
 
+        mchorse.bbs_mod.graphics.OptiFineShaders.forceOpaque(shaderCutout);
         model.render(newStack, program, finalColor, light, overlay, stencilMap, this.form.shapeKeys.get(), (material) ->
         {
             if (ignoreMaterials)
@@ -585,6 +601,8 @@ public class ModelFormRenderer extends FormRenderer<ModelForm> implements ITicka
             return model.getMaterialTexture(material, materialFallback);
         });
 
+        mchorse.bbs_mod.graphics.OptiFineShaders.forceOpaque(false);
+
         if (stencilMap == null && !this.renderingArm && this.form != null)
         {
             ModelIKDebug.render(newStack, model.model, this.form, "");
@@ -596,6 +614,11 @@ public class ModelFormRenderer extends FormRenderer<ModelForm> implements ITicka
         }
 
         RenderSystem.disableBlend();
+
+        if (shaderCutout && !alphaTestWas)
+        {
+            net.minecraft.client.renderer.GlStateManager.disableAlpha();
+        }
 
         if (!model.isCulling())
         {

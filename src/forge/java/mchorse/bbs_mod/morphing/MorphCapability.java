@@ -50,7 +50,12 @@ public class MorphCapability
     {
         Morph morph = Morph.getMorph(event.player);
         if (morph == null) return;
-        if (event.phase == TickEvent.Phase.START) morph.update(); else morph.updateDimensions();
+        if (event.phase == TickEvent.Phase.START) morph.update();
+        else
+        {
+            morph.updateDimensions();
+            mchorse.bbs_mod.forge.MorphPlayerHooks.enforceSpeed(event.player);
+        }
     }
     @SubscribeEvent public void clonePlayer(net.minecraftforge.event.entity.player.PlayerEvent.Clone event)
     {

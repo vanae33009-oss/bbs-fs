@@ -1094,7 +1094,8 @@ public class UIFilmController extends UIElement implements GizmoViewport
 
         if (this.editorController != null)
         {
-            this.editorController.render(context);
+            /* Under a shader pack the actors were already drawn at the end of renderEntities. */
+            if (!mchorse.bbs_mod.client.BBSRendering.isEntityStageDrawn()) this.editorController.render(context);
 
             /* The actor scene belongs in the movie; camera previews, the orbit
              * pivot, motion paths and addon editor tools belong in the editor. */

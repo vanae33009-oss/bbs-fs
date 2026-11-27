@@ -6,6 +6,7 @@ import java.lang.reflect.Method;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL14;
 import org.lwjgl.opengl.GL20;
 
 /** Optional G5 shader API. No OptiFine classes are linked into the distributable. */
@@ -139,6 +140,72 @@ public final class OptiFineShaders
             entityIdBroken = true;
             BBSMod.LOGGER.warn("OptiFine entity id hook failed; actors keep the pack's last entity id", error);
         }
+    }
+
+    /* Solid forms under a pack: the draw must not blend. GlStateManager only remembers what it last set
+     * itself, and OptiFine switches blending (also per draw buffer) with raw GL calls when it selects a
+     * program, so disableBlend() issued before the program is bound can be a no-op or be undone. The
+     * state is therefore forced after the program is bound, on the real GL state, and handed back. */
+    private static boolean forceOpaque;
+    public static void forceOpaque(boolean on) { forceOpaque = on; }
+    public static final class OpaqueState implements AutoCloseable
+    {
+        private final boolean blend, mask;
+        private OpaqueState()
+        {
+            blend = GL11.glIsEnabled(GL11.GL_BLEND);
+            mask = GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK);
+            GL11.glDisable(GL11.GL_BLEND);
+            /* Per draw buffer switches (glDisablei) are called by reflection: LWJGL 2 builds differ in
+             * whether GL30 exposes them, and a missing method must not break compilation or the draw. */
+            try
+            {
+                if (org.lwjgl.opengl.GLContext.getCapabilities().OpenGL30)
+                {
+                    java.lang.reflect.Method disablei = org.lwjgl.opengl.GL30.class.getMethod("glDisablei", int.class, int.class);
+                    for (int i = 0; i < 8; i++) disablei.invoke(null, GL11.GL_BLEND, i);
+                }
+            }
+            catch (Throwable ignored) { }
+            GL11.glDepthMask(true);
+        }
+        @Override public void close()
+        {
+            if (blend) GL11.glEnable(GL11.GL_BLEND);
+            GL11.glDepthMask(mask);
+        }
+    }
+    /** Non-null while the current draw has to come out solid; close it after the draw. */
+    public static OpaqueState opaqueState() { return forceOpaque && isWorldPass() ? new OpaqueState() : null; }
+
+    private static final boolean DEBUG = Boolean.getBoolean("bbs.shaderDebug");
+    private static int debugCount;
+    private static String programName()
+    {
+        try
+        {
+            Object program = get(API.active);
+            return String.valueOf(program.getClass().getMethod("getName").invoke(program));
+        }
+        catch (Throwable error) { return "?"; }
+    }
+    /** -Dbbs.shaderDebug=true: logs the real GL state of the first actor draws (then every 600th). */
+    public static void debugDraw(float a)
+    {
+        if (!DEBUG || !isLoaded()) return;
+        int n = debugCount++;
+        if (n >= 30 && n % 600 != 0) return;
+        java.nio.FloatBuffer color = org.lwjgl.BufferUtils.createFloatBuffer(16);
+        GL11.glGetFloat(GL11.GL_CURRENT_COLOR, color);
+        BBSMod.LOGGER.info("[BBS shader debug #{}] program={} id={} world={} shadow={} forceOpaque={} drawAlpha={} "
+            + "blend={} blendSrcRGB={} blendDstRGB={} blendSrcA={} blendDstA={} depthTest={} depthMask={} depthFunc={} "
+            + "alphaTest={} cull={} currentColor=({},{},{},{}) entity={}",
+            programName(), GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM), isWorldPass(), isShadowPass(), forceOpaque, a,
+            GL11.glIsEnabled(GL11.GL_BLEND), GL11.glGetInteger(GL14.GL_BLEND_SRC_RGB), GL11.glGetInteger(GL14.GL_BLEND_DST_RGB),
+            GL11.glGetInteger(GL14.GL_BLEND_SRC_ALPHA), GL11.glGetInteger(GL14.GL_BLEND_DST_ALPHA),
+            GL11.glIsEnabled(GL11.GL_DEPTH_TEST), GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK), GL11.glGetInteger(GL11.GL_DEPTH_FUNC),
+            GL11.glIsEnabled(GL11.GL_ALPHA_TEST), GL11.glIsEnabled(GL11.GL_CULL_FACE),
+            color.get(0), color.get(1), color.get(2), color.get(3), shaderEntity);
     }
 
     public static EntityPass entities() { return new EntityPass(API.entities); }

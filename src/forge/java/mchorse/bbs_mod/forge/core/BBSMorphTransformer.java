@@ -7,7 +7,22 @@ import org.objectweb.asm.tree.*;
 /** Narrow replacements for the original player arm and eye-height mixins. */
 public final class BBSMorphTransformer implements IClassTransformer
 {
+    private static final org.apache.logging.log4j.Logger LOGGER = org.apache.logging.log4j.LogManager.getLogger("BBSMorphTransformer");
+
     public byte[] transform(String name, String transformedName, byte[] bytes)
+    {
+        try
+        {
+            return patch(transformedName, bytes);
+        }
+        catch (Throwable error)
+        {
+            LOGGER.error("BBS morph hooks disabled for " + transformedName + ": " + error);
+            return bytes;
+        }
+    }
+
+    private static byte[] patch(String transformedName, byte[] bytes)
     {
         boolean player = "net.minecraft.entity.player.EntityPlayer".equals(transformedName);
         boolean renderer = "net.minecraft.client.renderer.entity.RenderPlayer".equals(transformedName);
@@ -70,6 +85,24 @@ public final class BBSMorphTransformer implements IClassTransformer
                 }
                 changed++;
             }
+            if (player && (method.name.equals("onLivingUpdate") || method.name.equals("func_70636_d")) && method.desc.equals("()V"))
+            {
+                for (AbstractInsnNode instruction : method.instructions.toArray())
+                {
+                    if (!(instruction instanceof MethodInsnNode)) continue;
+                    MethodInsnNode call = (MethodInsnNode) instruction;
+                    if (!call.owner.equals("net/minecraft/entity/player/PlayerCapabilities") || !call.desc.equals("()F")
+                        || !(call.name.equals("getWalkSpeed") || call.name.equals("func_75094_b"))) continue;
+                    /* Stack holds the capabilities; add the player and call the hook instead of the getter. */
+                    InsnList hook = new InsnList();
+                    hook.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                    hook.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "mchorse/bbs_mod/forge/MorphPlayerHooks", "walkSpeed",
+                        "(Lnet/minecraft/entity/player/PlayerCapabilities;Lnet/minecraft/entity/player/EntityPlayer;)F", false));
+                    method.instructions.insertBefore(call, hook);
+                    method.instructions.remove(call);
+                    changed++;
+                }
+            }
             boolean right = method.name.equals("renderRightArm") || method.name.equals("func_177138_b");
             boolean left = method.name.equals("renderLeftArm") || method.name.equals("func_177139_c");
             if (renderer && (right || left) && method.desc.equals("(Lnet/minecraft/client/entity/AbstractClientPlayer;)V"))
@@ -87,9 +120,10 @@ public final class BBSMorphTransformer implements IClassTransformer
                 changed++;
             }
         }
-        if (changed != (renderer ? 3 : 1)) throw new IllegalStateException("BBS morph hooks did not match " + transformedName);
+        if (changed != (renderer ? 3 : player ? 2 : 1)) throw new IllegalStateException("BBS morph hooks did not match " + transformedName);
         ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
         node.accept(writer);
+        if (player) LOGGER.info("BBS morph hooks applied to EntityPlayer (eye height, walk speed)");
         return writer.toByteArray();
     }
 }
