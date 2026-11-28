@@ -163,7 +163,7 @@ public final class BBSRendering
         GlStateManager.matrixMode(GL11.GL_MODELVIEW); GlStateManager.pushMatrix(); GlStateManager.loadIdentity();
         boolean previous = renderingWorld;
         renderingWorld = true;
-        try
+        try (mchorse.bbs_mod.graphics.GlIsolation isolation = entityStage ? mchorse.bbs_mod.graphics.GlIsolation.begin() : null)
         {
             BBSModClient.getFilms().render(context);
             UIBaseMenu menu = UIScreen.getCurrentMenu();

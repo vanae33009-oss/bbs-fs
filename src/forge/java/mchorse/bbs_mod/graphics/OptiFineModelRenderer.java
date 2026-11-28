@@ -112,6 +112,20 @@ public final class OptiFineModelRenderer
         private final OptiFineShaders.OverlayPass overlay;
         private final boolean nativeVertices;
         private OptiFineShaders.OpaqueState opaque;
+        /* Generic attribute values are global GL state: whatever BBS sets for the pack's attributes would
+         * otherwise leak into the next vanilla draw (the block selection box, particles, ...). */
+        private final int[] savedLocation = {-1, -1, -1};
+        private final float[][] savedValue = new float[3][4];
+
+        private void saveAttribute(int program, String name, int slot)
+        {
+            int location = GL20.glGetAttribLocation(program, name);
+            if (location < 0) return;
+            FloatBuffer value = BufferUtils.createFloatBuffer(16);
+            GL20.glGetVertexAttrib(location, GL20.GL_CURRENT_VERTEX_ATTRIB, value);
+            savedLocation[slot] = location;
+            for (int i = 0; i < 4; i++) savedValue[slot][i] = value.get(i);
+        }
 
         private Scope(Matrix4f modelView, Matrix4f projection, float r, float g, float b, float a, int light, boolean nativeVertices,int overlayUv)
         {
@@ -172,6 +186,9 @@ public final class OptiFineModelRenderer
             GL11.glColor4f(r,g,b,a);
             int program = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
             OptiFineShaders.debugDraw(a);
+            saveAttribute(program, "mc_Entity", 0);
+            saveAttribute(program, "mc_midTexCoord", 1);
+            saveAttribute(program, "at_tangent", 2);
             attribute(program, "mc_Entity", -1, -1, -1, 0);
             attribute(program, "mc_midTexCoord", 0, 0, 0, 1);
             attribute(program, "at_tangent", 1, 0, 0, 1);
@@ -188,6 +205,10 @@ public final class OptiFineModelRenderer
             if(overlay!=null)overlay.close();
             if(opaque!=null)opaque.close();
             OptiFinePbr.end();
+            for (int i = 0; i < 3; i++)
+            {
+                if (savedLocation[i] >= 0) GL20.glVertexAttrib4f(savedLocation[i], savedValue[i][0], savedValue[i][1], savedValue[i][2], savedValue[i][3]);
+            }
             if (nativeVertices)
             {
                 GL30.glBindVertexArray(0);
